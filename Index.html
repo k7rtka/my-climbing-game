@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel Ascent: Pro Mobile</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        canvas { image-rendering: pixelated; touch-action: none; }
+    </style>
+</head>
+<body>
+<script>
+
+// Глобальное состояние кошелька и инвентаря
+const PlayerData = {
+    money: 500,
+    inventory: {
+        oxygen: 0,
+        betterAxes: false,
+        proCrampons: false
+    }
+};
+
+const MOUNTAINS = [
+    { name: "ЭЛЬБРУС", height: "5642м", oxyRequired: false, diff: 1, color: 0xa2d2ff, reward: 200 },
+    { name: "МАТТЕРХОРН", height: "4478м", oxyRequired: false, diff: 2, color: 0x48cae4, reward: 400 },
+    { name: "СЕРРО-ТОРРЕ", height: "3128м", oxyRequired: false, diff: 3, color: 0x0096c7, reward: 600 },
+    { name: "ЭВЕРЕСТ", height: "8848м", oxyRequired: true, diff: 4, color: 0x023e8a, reward: 1200 },
+    { name: "К2", height: "8611м", oxyRequired: true, diff: 5, color: 0x03045e, reward: 2000 }
+];
+
+let selectedMountain = MOUNTAINS[0];
+
+// --- SCENE 1: MENU & SHOP ---
+class MenuScene extends Phaser.Scene {
+    constructor() { super('MenuScene'); }
+
+    create() {
+        const { width, height } = this.scale;
+        this.add.rectangle(width/2, height/2, width, height, 0x11111b);
+
+        this.add.text(width/2, 60, 'PIXEL ASCENT PRO', { fontSize: '32px', fill: '#fff', fontStyle: 'bold' }).setOrigin(0.5);
+        this.add.text(width/2, 100, `ВАЛЮТА: $${PlayerData.money}`, { fontSize: '18px', fill: '#ffd166' }).setOrigin(0.5);
+
+        // Кнопки гор
+        MOUNTAINS.forEach((m, i) => {
+            let btn = this.add.rectangle(width/2, 200 + i*70, 320, 60, 0x1e1e2e).setInteractive();
+            btn.setStrokeStyle(2, 0x45475a);
+            this.add.text(width/2, 200 + i*70, m.name, { fontSize: '20px', fill: '#cdd6f4' }).setOrigin(0.5);
+            btn.on('pointerdown', () => { selectedMountain = m; this.scene.start('PlayScene'); });
+        });
+
+        // МАГАЗИН
+        let shopBtn = this.add.rectangle(width/2, height - 100, 200, 50, 0xf5c2e7).setInteractive();
+        this.add.text(width/2, height - 100, 'В МАГАЗИН', { fontSize: '18px', fill: '#11111b', fontStyle: 'bold' }).setOrigin(0.5);
+        shopBtn.on('pointerdown', () => this.showShop());
+    }
+
+    showShop() {
+        const { width, height } = this.scale;
+        let overlay = this.add.rectangle(width/2, height/2, width, height, 0x000, 0.9);
+        let shopText = this.add.text(width/2, 150, 'СНАРЯЖЕНИЕ', { fontSize: '28px', fill: '#fff' }).setOrigin(0.5);
+        
+        const items = [
+            { id: 'oxygen', name: 'КИСЛОРОД (1 шт)', price: 150 },
+            { id: 'betterAxes', name: 'PRO ЛЕДОРУБЫ', price: 500 }
+        ];
+
+        items.forEach((item, i) => {
+            let ibtn = this.add.rectangle(width/2, 250 + i*80, 300, 60, 0x313244).setInteractive();
+            this.add.text(width/2, 250 + i*80, `${item.name}\n$${item.price}`, { fontSize: '16px', fill: '#fff', align: 'center' }).setOrigin(0.5);
+            
+            ibtn.on('pointerdown', () => {
+                if (PlayerData.money >= item.price) {
+                    PlayerData.money -= item.price;
+                    if (item.id === 'oxygen') PlayerData.inventory.oxygen++;
+                    else PlayerData.inventory[item.id] = true;
+                    this.scene.restart();
+                }
+            });
+        });
+
+        let close = this.add.text(width/2, height - 100, 'ЗАКРЫТЬ', { fontSize: '22px', fill: '#f38ba8' }).setInteractive().setOrigin(0.5);
+        close.on('pointerdown', () => this.scene.restart());
+    }
+}
+
+// --- SCENE 2: PLAY SCENE ---
+class PlayScene extends Phaser.Scene {
+    constructor() { super('PlayScene'); }
+
+    preload() {
+        // РИСУЕМ ВЫСОТНОГО АЛЬПИНИСТА (High-Bit Pixel Style)
+        let climberTex = this.textures.createCanvas('climber_body', 40, 60);
+        let ctx = climberTex.context;
+        
+        // Рюкзак
+        ctx.fillStyle = '#45475a'; ctx.fillRect(8, 15, 24, 30);
+        // Толстый красный пуховик (Down Suit)
+        ctx.fillStyle = '#e63946'; ctx.fillRect(10, 10, 20, 35);
+        // Черные вставки на коленях/локтях
+        ctx.fillStyle = '#111'; ctx.fillRect(10, 30, 20, 5); 
+        // Штаны (нижняя часть пуховика)
+        ctx.fillRect(10, 45, 8, 15); ctx.fillRect(22, 45, 8, 15);
+        // Желтая обвязка (Harness)
+        ctx.fillStyle = '#ffb703'; ctx.fillRect(10, 38, 20, 3);
+        // Каска
+        ctx.fillStyle = '#fff'; ctx.fillRect(12, 0, 16, 12);
+        climberTex.refresh();
+
+        // Ледорубы
+        let axeTex = this.textures.createCanvas('ice_axe', 20, 20);
+        let actx = axeTex.context;
+        actx.fillStyle = '#7f8c8d'; actx.fillRect(2, 2, 16, 4); // Клюв
+        actx.fillStyle = '#2c3e50'; actx.fillRect(8, 4, 3, 14); // Рукоятка
+        axeTex.refresh();
+
+        // Зацепы (Снежные и скальные)
+        let holdTex = this.textures.createCanvas('hold_stone', 24, 24);
+        holdTex.context.fillStyle = '#555'; holdTex.context.fillRect(0, 10, 24, 14);
+        holdTex.context.fillStyle = '#ddd'; holdTex.context.fillRect(0, 5, 24, 5); // Снег сверху
+        holdTex.refresh();
+    }
+
+    create() {
+        const { width, height } = this.scale;
+        this.worldHeight = 5000;
+        this.physics.world.setBounds(0, 0, width, this.worldHeight);
+
+        // Атмосфера
+        this.add.graphics().fillGradientStyle(0x000, 0x000, selectedMountain.color, selectedMountain.color, 1).fillRect(0,0,width,this.worldHeight);
+
+        // Группы объектов
+        this.holds = this.physics.add.staticGroup();
+        this.createMountainMap();
+
+        // Альпинист
+        this.climber = this.physics.add.sprite(width/2, this.worldHeight - 150, 'climber_body');
+        this.climber.body.setGravityY(500);
+
+        // Руки с ледорубами
+        this.leftAxe = this.add.sprite(width/2 - 40, this.worldHeight - 200, 'ice_axe').setInteractive({ draggable: true });
+        this.rightAxe = this.add.sprite(width/2 + 40, this.worldHeight - 200, 'ice_axe').setInteractive({ draggable: true });
+        
+        this.reachLimit = 110; // Длина руки
+        this.stamina = 100;
+        this.oxygenActive = false;
+        this.oxyLevel = 100;
+        this.isFalling = false;
+        this.anchors = 3;
+
+        // Линии рук
+        this.ropeGraphics = this.add.graphics();
+
+        // Камера
+        this.cameras.main.setBounds(0, 0, width, this.worldHeight);
+        this.cameras.main.startFollow(this.climber, true, 0.1, 0.1);
+
+        // Мобильный ввод
+        this.setupControls();
+        this.createMobileHUD();
+        
+        // Таймер лавин
+        this.time.addEvent({ delay: 15000, callback: this.triggerAvalanche, callbackScope: this, loop: true });
+    }
+
+    createMountainMap() {
+        const { width } = this.scale;
+        for (let y = this.worldHeight - 100; y > 100; y -= (70 - selectedMountain.diff * 5)) {
+            let x = Phaser.Math.Between(40, width - 40);
+            this.holds.create(x, y, 'hold_stone').setScale(1.5).refreshBody();
+        }
+    }
+
+    setupControls() {
+        this.input.on('drag', (p, obj, dx, dy) => {
+            if (this.isFalling) return;
+            
+            // Проверка длины руки (реализм)
+            let dist = Phaser.Math.Distance.Between(this.climber.x, this.climber.y - 20, dx, dy);
+            if (dist <= this.reachLimit) {
+                obj.x = dx;
+                obj.y = dy;
+            }
+            obj.isAnchored = false;
+        });
+
+        this.input.on('dragend', (p, obj) => {
+            let hold = this.physics.overlapRect(obj.x-10, obj.y-10, 20, 20);
+            let found = hold.some(h => h.gameObject.texture && h.gameObject.texture.key === 'hold_stone');
+            
+            if (found) {
+                obj.isAnchored = true;
+                // Магнит к зацепе
+                let nearest = this.holds.getChildren().find(h => Phaser.Math.Distance.Between(obj.x, obj.y, h.x, h.y) < 30);
+                if (nearest) { obj.x = nearest.x; obj.y = nearest.y; }
+            }
+        });
+    }
+
+    createMobileHUD() {
+        const { width, height } = this.scale;
+        this.hud = this.add.container(0, 0).setScrollFactor(0);
+
+        // Стамина
+        this.add.rectangle(70, 40, 100, 15, 0x333).setOrigin(0).setScrollFactor(0).addToContainer(this.hud);
+        this.staminaBar = this.add.rectangle(70, 40, 100, 15, 0x2ecc71).setOrigin(0).setScrollFactor(0).addToContainer(this.hud);
+        this.add.text(10, 40, 'СИЛА', { fontSize: '14px' }).setScrollFactor(0).addToContainer(this.hud);
+
+        // Кислород (если есть)
+        if (selectedMountain.oxyRequired) {
+            this.oxyBtn = this.add.circle(width - 50, height - 150, 35, 0x3498db).setInteractive().setScrollFactor(0);
+            this.add.text(width - 75, height - 155, 'O2', { fontSize: '18px', fontStyle: 'bold' }).setScrollFactor(0).addToContainer(this.hud);
+            this.oxyBtn.on('pointerdown', () => {
+                if (PlayerData.inventory.oxygen > 0 && !this.oxygenActive) {
+                    this.oxygenActive = true;
+                    PlayerData.inventory.oxygen--;
+                    this.oxyBtn.setFillStyle(0x2ecc71);
+                }
+            });
+        }
+
+        // Кнопка страховки (большая для пальца)
+        let sBtn = this.add.circle(width - 50, height - 60, 40, 0xe67e22).setInteractive().setScrollFactor(0);
+        this.add.text(width - 80, height - 65, 'КРЮК', { fontSize: '14px', fontStyle: 'bold' }).setScrollFactor(0).addToContainer(this.hud);
+        sBtn.on('pointerdown', () => this.setAnchor());
+
+        this.heightInfo = this.add.text(width/2, 20, 'ВЫСОТА: 0м', { fontSize: '18px', fill: '#fff' }).setOrigin(0.5).setScrollFactor(0).addToContainer(this.hud);
+    }
+
+    setAnchor() {
+        if (this.anchors > 0) {
+            this.lastAnchorY = this.climber.y;
+            this.anchors--;
+            this.add.circle(this.climber.x, this.climber.y, 5, 0xffd166);
+        }
+    }
+
+    triggerAvalanche() {
+        if (selectedMountain.diff < 3) return;
+        this.cameras.main.shake(2000, 0.01);
+        this.add.text(this.scale.width/2, 200, 'ЛАВИНА!', { fontSize: '40px', fill: '#ff0000' }).setOrigin(0.5).setScrollFactor(0);
+        
+        this.time.delayedCall(2000, () => {
+            if (!this.leftAxe.isAnchored && !this.rightAxe.isAnchored) {
+                this.triggerFall();
+            }
+        });
+    }
+
+    update(time, delta) {
+        if (this.isFalling) { this.handleFall(); return; }
+
+        this.ropeGraphics.clear();
+        this.ropeGraphics.lineStyle(4, 0x222, 1);
+        this.ropeGraphics.lineBetween(this.climber.x - 10, this.climber.y - 15, this.leftAxe.x, this.leftAxe.y);
+        this.ropeGraphics.lineBetween(this.climber.x + 10, this.climber.y - 15, this.rightAxe.x, this.rightAxe.y);
+
+        let leftOk = this.leftAxe.isAnchored;
+        let rightOk = this.rightAxe.isAnchored;
+
+        if (leftOk && rightOk) {
+            this.climber.body.setVelocity(0);
+            let tx = (this.leftAxe.x + this.rightAxe.x) / 2;
+            let ty = (this.leftAxe.y + this.rightAxe.y) / 2 + 50;
+            this.climber.x += (tx - this.climber.x) * 0.1;
+            this.climber.y += (ty - this.climber.y) * 0.1;
+            this.stamina = Math.min(100, this.stamina + 0.2);
+        } 
+        else if (leftOk || rightOk) {
+            let active = leftOk ? this.leftAxe : this.rightAxe;
+            this.climber.body.setVelocity(0);
+            this.climber.y += ( (active.y + 70) - this.climber.y) * 0.05;
+            this.climber.x += (active.x - this.climber.x) * 0.05;
+
+            // Расход стамины
+            let drain = selectedMountain.oxyRequired && !this.oxygenActive ? 0.8 : 0.2;
+            this.stamina -= drain;
+        } 
+        else {
+            this.triggerFall();
+        }
+
+        if (this.stamina <= 0) this.triggerFall();
+
+        // UI
+        this.staminaBar.width = this.stamina;
+        let alt = Math.round(this.worldHeight - this.climber.y);
+        this.heightInfo.setText(`ВЫСОТА: ${alt}м`);
+
+        if (this.climber.y < 200) this.win();
+    }
+
+    triggerFall() {
+        this.isFalling = true;
+        this.climber.body.setGravityY(800);
+        this.leftAxe.isAnchored = false;
+        this.rightAxe.isAnchored = false;
+    }
+
+    handleFall() {
+        if (this.lastAnchorY && this.climber.y > this.lastAnchorY + 150) {
+            this.isFalling = false;
+            this.climber.y = this.lastAnchorY + 140;
+            this.climber.body.setVelocity(0);
+            this.stamina = 40;
+        } else if (this.climber.y > this.worldHeight) {
+            this.scene.start('MenuScene');
+        }
+    }
+
+    win() {
+        PlayerData.money += selectedMountain.reward;
+        this.scene.start('MenuScene');
+    }
+}
+
+// Config
+const config = {
+    type: Phaser.AUTO,
+    width: 360,
+    height: 740,
+    parent: 'game',
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 } } },
+    scene: [MenuScene, PlayScene]
+};
+
+new Phaser.Game(config);
+
+// Хелпер для контейнеров
+Phaser.GameObjects.GameObject.prototype.addToContainer = function(container) {
+    container.add(this);
+    return this;
+};
+
+</script>
+</body>
+</html>
